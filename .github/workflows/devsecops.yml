@@ -1,0 +1,55 @@
+name: DevSecOps Pipeline
+
+on: [push]
+
+jobs:
+  security-scans:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # Terraform Security Scan
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-action@main
+        with:
+          soft_fail: true
+
+      # Docker Security Scan
+      - name: Build Docker image
+        run: docker build -t devops-app .
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'devops-app'
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+
+  deploy:
+    needs: security-scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # Set up Kubernetes tools
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: v1.29.0
+
+      # For EKS clusters (replace with your config)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # Apply Kubernetes manifests
+      - name: Deploy application
+        run: |
+          kubectl apply -f k8s/sealed-secret.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl get pods
